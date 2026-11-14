@@ -68,6 +68,9 @@ PaperQuest는 논문 PDF를 문단·그림·표·수식 단위의 **학습 카�
 
 ## 내 iPhone에 설치하기
 
+> [!IMPORTANT]
+> **클론한 그대로는 iPhone에 설치되지 않습니다.** 프로젝트에는 원작자의 개발자 Team과 번들 ID(`com.junhyeok.PaperQuest`)가 들어 있습니다. Xcode의 **Signing & Capabilities**에서 **① 본인 Team을 고르고 ② 번들 ID를 본인 것으로 바꿔야** 합니다. 자세한 방법은 아래 2단계에 있습니다.
+
 ### 1. 클론하고 열기
 
 ```bash
@@ -177,6 +180,35 @@ PDF 분석은 무거우므로 메인 스레드가 아닌 백그라운드(`@concu
 
 ---
 
+## 테스트
+
+PDF 분석 규칙은 한 곳을 고치면 다른 양식의 논문이 깨지기 쉽습니다. 그래서 **회귀 테스트**(`PaperQuestTests`, Swift Testing)로 지금 잘 되는 결과를 고정해 두고, 분석기를 고칠 때마다 확인합니다.
+
+**실행 방법**: Xcode에서 실행 대상을 시뮬레이터(예: iPhone 17)로 고르고 **⌘U**를 누릅니다. 테스트는 시뮬레이터에서 실행되며 저장소의 PDF를 직접 읽습니다.
+
+| 테스트 묶음 | 대상 논문 | 실행 조건 |
+|---|---|---|
+| Demo paper | `docs/demo/demo-paper.pdf` (IEEE 2단) | 항상 실행 |
+| IEEE journal paper | `LocalTestPapers/x-spur-ieee.pdf` | 파일이 있을 때만 |
+| NeurIPS paper | `LocalTestPapers/attention-neurips.pdf` | 파일이 있을 때만 |
+
+저작권이 있는 논문은 공개 저장소에 올릴 수 없어서, `LocalTestPapers/` 폴더는 `.gitignore`로 제외했습니다. 이 폴더에 위 이름으로 논문을 넣으면 해당 테스트가 켜지고, 없으면 건너뜁니다.
+
+**검사하는 것**
+- 카드 수와 순서: 논문 정보 카드가 맨 앞, 그다음 Abstract
+- 섹션 경로: 예) `II. Layout Analysis › C. Figures, Tables and Equations`
+- 그림·표·알고리즘·수식의 개수와 캡션
+  - 본문 속 "Table II."를 캡션으로 오인하지 않는지
+  - 표 머리행이 캡션에 섞이지 않는지
+- 머리글·각주·저작권 안내·참고문헌이 카드에 섞이지 않는지
+- 글머리표 목록이 항목 단위로 묶이는지, 그림이 처음 언급된 문단 뒤에 오는지
+- 수식 카드에 도입문과 설명이 붙는지
+- 모든 PDF 영역이 페이지 안에 있고 렌더링할 수 있는 크기인지
+
+분석 결과가 **의도적으로** 좋아져서 카드 구성이 바뀌면, 테스트의 기대값을 함께 고쳐 주세요. 이때 `PaperLibrary.swift`의 `analysisVersion`도 올려야 합니다.
+
+---
+
 ## 프로젝트 구조
 
 | 파일 | 역할 |
@@ -193,6 +225,8 @@ PDF 분석은 무거우므로 메인 스레드가 아닌 백그라운드(`@concu
 | `ReadingAssistance.swift` | 번역·해설 저장, 기기 내 언어 모델 호출과 지시문 |
 | `OriginalPDFView.swift` | 원문 PDF 뷰어 |
 | `CompletionView.swift` | 마지막 카드 완료 화면 |
+| `PaperQuestTests/` | PDF 분석 회귀 테스트 (위 "테스트" 참고) |
+| `LocalTestPapers/` | 로컬 전용 테스트 논문 (저장소에는 올라가지 않음) |
 | `docs/demo/` | 데모 논문 원본(`demo-paper.tex`)과 PDF |
 | `docs/images/` | README 스크린샷 |
 

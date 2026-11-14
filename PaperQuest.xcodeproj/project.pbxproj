@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		664708D130A844BF005A36FC /* PaperQuestTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PaperQuestTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		66B7923C300A5CE30014FAA5 /* PaperQuest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PaperQuest.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -21,6 +22,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		664708D230A844BF005A36FC /* PaperQuestTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PaperQuestTests;
+			sourceTree = "<group>";
+		};
 		66B7923E300A5CE30014FAA5 /* PaperQuest */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -32,6 +38,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		664708CE30A844BF005A36FC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		66B79239300A5CE30014FAA5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -46,6 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				66B7923E300A5CE30014FAA5 /* PaperQuest */,
+				664708D230A844BF005A36FC /* PaperQuestTests */,
 				66B7923D300A5CE30014FAA5 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,6 +68,7 @@
 			isa = PBXGroup;
 			children = (
 				66B7923C300A5CE30014FAA5 /* PaperQuest.app */,
+				664708D130A844BF005A36FC /* PaperQuestTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -61,6 +76,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		664708D030A844BF005A36FC /* PaperQuestTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 664708D530A844BF005A36FC /* Build configuration list for PBXNativeTarget "PaperQuestTests" */;
+			buildPhases = (
+				664708CD30A844BF005A36FC /* Sources */,
+				664708CE30A844BF005A36FC /* Frameworks */,
+				664708CF30A844BF005A36FC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				664708D230A844BF005A36FC /* PaperQuestTests */,
+			);
+			name = PaperQuestTests;
+			packageProductDependencies = (
+			);
+			productName = PaperQuestTests;
+			productReference = 664708D130A844BF005A36FC /* PaperQuestTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		66B7923B300A5CE30014FAA5 /* PaperQuest */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 66B79247300A5CE40014FAA5 /* Build configuration list for PBXNativeTarget "PaperQuest" */;
@@ -90,9 +127,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2660;
+				LastSwiftUpdateCheck = 2720;
 				LastUpgradeCheck = 2720;
 				TargetAttributes = {
+					664708D030A844BF005A36FC = {
+						CreatedOnToolsVersion = 27.2;
+					};
 					66B7923B300A5CE30014FAA5 = {
 						CreatedOnToolsVersion = 26.6;
 					};
@@ -113,11 +153,19 @@
 			projectRoot = "";
 			targets = (
 				66B7923B300A5CE30014FAA5 /* PaperQuest */,
+				664708D030A844BF005A36FC /* PaperQuestTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		664708CF30A844BF005A36FC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		66B7923A300A5CE30014FAA5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -128,6 +176,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		664708CD30A844BF005A36FC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		66B79238300A5CE30014FAA5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -138,6 +193,56 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		664708D630A844BF005A36FC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				MACOSX_DEPLOYMENT_TARGET = 27.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.PaperQuestTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PaperQuest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PaperQuest";
+				XROS_DEPLOYMENT_TARGET = 27.2;
+			};
+			name = Debug;
+		};
+		664708D730A844BF005A36FC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				MACOSX_DEPLOYMENT_TARGET = 27.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.PaperQuestTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PaperQuest.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PaperQuest";
+				XROS_DEPLOYMENT_TARGET = 27.2;
+			};
+			name = Release;
+		};
 		66B79245300A5CE40014FAA5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -328,6 +433,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		664708D530A844BF005A36FC /* Build configuration list for PBXNativeTarget "PaperQuestTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				664708D630A844BF005A36FC /* Debug */,
+				664708D730A844BF005A36FC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		66B79237300A5CE30014FAA5 /* Build configuration list for PBXProject "PaperQuest" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
