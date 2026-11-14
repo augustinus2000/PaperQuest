@@ -137,6 +137,10 @@ nonisolated private struct LayoutAnalysis {
         // Pages made only of figures fall back to the layout seen elsewhere.
         let fallback = built.first { $0.columns.count == 2 }?.columns
         pages = built.map { page in
+            // A last page whose right column holds only small reference text still reads in two columns.
+            if page.columns.count == 1, let fallback, isMostlyNarrow(page) {
+                return layoutPage(index: page.index, box: page.box, lines: page.lines, columns: fallback)
+            }
             guard page.columns.isEmpty else { return page }
             let columns = fallback ?? [page.box.minX + 40...page.box.maxX - 40]
             return layoutPage(index: page.index, box: page.box, lines: page.lines, columns: columns)
@@ -267,6 +271,14 @@ nonisolated private struct LayoutAnalysis {
         return merged
     }
 
+    /// Most body lines fit inside half the page, so the page is set in columns.
+    private func isMostlyNarrow(_ page: PageLayout) -> Bool {
+        let body = page.lines.filter { isProseSize($0) && $0.rect.width > page.box.width * 0.2 }
+        guard body.count >= 6 else { return false }
+        let narrow = body.filter { $0.rect.width < page.box.width * 0.55 }
+        return Double(narrow.count) >= Double(body.count) * 0.8
+    }
+
     private func isProseSize(_ line: Line) -> Bool {
         line.fontSize == 0 || (line.fontSize >= bodySize * 0.86 && line.fontSize <= bodySize * 1.15)
     }
@@ -312,8 +324,9 @@ nonisolated private struct LayoutAnalysis {
         }
 
         // Spanning items above all body text (title, wide figures) read first.
+        // Labels inside a wide figure are short, so only sentence-like lines mark where body text begins.
         let bodyTop = assigned
-            .filter { $0.column != .span && isProseSize($0) && $0.rect.width > box.width * 0.2 }
+            .filter { $0.column != .span && isProseSize($0) && isSentenceLike($0.text) }
             .map(\.rect.maxY).max() ?? box.maxY
         let topDown: (Line, Line) -> Bool = {
             $0.rect.maxY != $1.rect.maxY ? $0.rect.maxY > $1.rect.maxY : $0.rect.minX < $1.rect.minX
@@ -398,7 +411,9 @@ nonisolated private struct LayoutAnalysis {
             ?? Self.firstGroup(#"(?i)^table\s+([ivxlc]+|\d+)[a-z]?\s*[:.|]"#, in: text) {
             return (.table, "table:\(label.lowercased())", #"(?i)\btable\s+"# + label + #"\b"#)
         }
-        if let number = Self.firstGroup(#"^Algorithm\s+(\d+)\s*[:.]"#, in: text) {
+        let isShortTitle = text.split(separator: " ").count <= 10 && !text.hasSuffix(".")
+        if let number = Self.firstGroup(#"^Algorithm\s+(\d+)\s*[:.]"#, in: text)
+            ?? (isShortTitle ? Self.firstGroup(#"^Algorithm\s+(\d+)\s+[A-Z]"#, in: text) : nil) {
             return (.algorithm, "algorithm:\(number)", #"(?i)\balgorithm\s+"# + number + #"(?![0-9])"#)
         }
         return nil
@@ -452,6 +467,8 @@ nonisolated private struct LayoutAnalysis {
                         && captionKind(of: candidate) == nil
                         && (isSmallCapsTitle
                             ? Self.lowercaseRatio(candidate.text) < 0.2
+                                || (abs(candidate.rect.midX - start.rect.midX) < 3
+                                    && previous.rect.minY - candidate.rect.maxY < max(previous.rect.height, candidate.rect.height) * 0.8)
                             // Caption lines share the first line's left edge (or center);
                             // table header rows below start elsewhere.
                             : abs(candidate.rect.minX - start.rect.minX) < 3
@@ -483,10 +500,19 @@ nonisolated private struct LayoutAnalysis {
         span: ClosedRange<CGFloat>,
         in page: PageLayout,
         captionIDs: Set<Int>,
-        excluding excluded: Set<Int>
+        excluding excluded: Set<Int>,
+        isAlgorithm: Bool = false
     ) -> CGRect? {
         let obstacles = page.lines.filter { line in
-            !excluded.contains(line.id)
+            // Numbered pseudo-code lines, Require/Input headers and nested (deeply indented)
+            // statements belong to the algorithm box.
+            // Captions and headings still end the box.
+            if isAlgorithm, !captionIDs.contains(line.id), !isHeading(line, in: page),
+               Self.matches(line.text, #"^(\d{1,2}:?\s|(Require|Ensure|Input|Output)\b)"#)
+                || line.rect.minX - page.range(for: line.column).lowerBound > 24 {
+                return false
+            }
+            return !excluded.contains(line.id)
                 && overlapsHorizontally(line.rect, span)
                 && (upward ? line.rect.midY > edge : line.rect.midY < edge)
                 && isObstacle(line, in: page, captionIDs: captionIDs)
@@ -532,7 +558,10 @@ nonisolated private struct LayoutAnalysis {
             let ownIDs = Set(caption.lines.map(\.id))
             // Figures sit above their caption and tables below it; try the other side as a fallback.
             let above = region(from: first.rect.maxY, upward: true, span: span, in: page, captionIDs: captionIDs, excluding: ownIDs)
-            let below = region(from: last.rect.minY, upward: false, span: span, in: page, captionIDs: captionIDs, excluding: ownIDs)
+            let below = region(
+                from: last.rect.minY, upward: false, span: span, in: page,
+                captionIDs: captionIDs, excluding: ownIDs, isAlgorithm: caption.kind == .algorithm
+            )
             guard let rect = caption.kind == .figure ? (above ?? below) : (below ?? above) else { continue }
             let inside = page.lines.filter {
                 !ownIDs.contains($0.id) && rect.contains(CGPoint(x: $0.rect.midX, y: $0.rect.midY))
@@ -642,8 +671,10 @@ nonisolated private struct LayoutAnalysis {
                 let bottom = group.map(\.rect.minY).min()!
                 let (above, below) = neighbors(of: group)
                 // Extend toward neighbors so tall symbols outside line bounds aren't clipped.
-                let upper = max(top + 2, min(above.map { $0.rect.minY - 1 } ?? top + 6, top + 12))
-                let lower = min(bottom - 2, max(below.map { $0.rect.maxY + 1 } ?? bottom - 6, bottom - 12))
+                // Extend toward neighbors for tall symbols, but stay clear of them: their line
+                // bounds don't fully cover descenders. Tight gaps may trim the equation's own padding.
+                let upper = max(top - 4, min(above.map { $0.rect.minY - 3 } ?? top + 6, top + 12))
+                let lower = min(bottom + 4, max(below.map { $0.rect.maxY + 3 } ?? bottom - 6, bottom - 12))
                 let rect = CGRect(x: range.lowerBound - 4, y: lower, width: width + 8, height: upper - lower)
                 used.formUnion(group.map(\.id))
                 result.append(
@@ -838,6 +869,7 @@ nonisolated private struct LayoutAnalysis {
                    line.rect.minY - next.rect.maxY < bodySize * 0.6,
                    next.rect.width < columnWidth(of: next) * 0.5,
                    !Self.matches(next.text, #"[.?!]$"#),
+                   !Self.matches(next.text, #"^([IVXL]+|[A-Z]|\d+(\.\d+)*)\.\s"#),
                    let following = nextUnconsumed(after: positionByID[next.id] ?? position),
                    indent(of: following) >= 4 {
                     title += " " + next.text
