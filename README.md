@@ -217,3 +217,11 @@ brew install tectonic
 cd docs/demo
 tectonic demo-paper.tex
 ```
+
+---
+
+## 라이선스
+
+[MIT License](LICENSE) © 2026 Junhyeok Im (augustinus2000)
+
+PaperQuest의 아이디어와 코드는 Junhyeok Im이 만들었습니다. MIT 라이선스에 따라 누구나 자유롭게 사용·수정·배포할 수 있으며, 그때 위 저작권 표시와 라이선스 문구를 함께 포함해야 합니다.
