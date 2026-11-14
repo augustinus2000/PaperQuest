@@ -13,19 +13,7 @@ nonisolated struct ImportedPaper {
     let fileName: String
     /// Kept so the analyzer can read line geometry and font sizes.
     let document: PDFDocument
-    let pages: [PDFPageContent]
-    let completeText: String
-}
-
-nonisolated struct PDFPageContent: Identifiable {
-    let id = UUID()
-
-    let pageIndex: Int
-    let text: String
-
-    var pageNumber: Int {
-        pageIndex + 1
-    }
+    let pageCount: Int
 }
 
 /// A rectangle on one PDF page, in PDF page coordinates (origin bottom-left).

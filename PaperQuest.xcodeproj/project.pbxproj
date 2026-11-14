@@ -6,6 +6,16 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		664708D830A844BF005A36FC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 66B79234300A5CE30014FAA5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 66B7923B300A5CE30014FAA5;
+			remoteInfo = PaperQuest;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		664708D130A844BF005A36FC /* PaperQuestTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PaperQuestTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		66B7923C300A5CE30014FAA5 /* PaperQuest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PaperQuest.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -87,6 +97,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				664708D930A844BF005A36FC /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				664708D230A844BF005A36FC /* PaperQuestTests */,
@@ -132,6 +143,7 @@
 				TargetAttributes = {
 					664708D030A844BF005A36FC = {
 						CreatedOnToolsVersion = 27.2;
+						TestTargetID = 66B7923B300A5CE30014FAA5;
 					};
 					66B7923B300A5CE30014FAA5 = {
 						CreatedOnToolsVersion = 26.6;
@@ -191,6 +203,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		664708D930A844BF005A36FC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 66B7923B300A5CE30014FAA5 /* PaperQuest */;
+			targetProxy = 664708D830A844BF005A36FC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		664708D630A844BF005A36FC /* Debug */ = {

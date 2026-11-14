@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "9B6B3C1E-5D2A-4C1B-9F0E-3A7D2E1C4B50",
+      "name" : "Default",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : false
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:PaperQuest.xcodeproj",
+        "identifier" : "664708D030A844BF005A36FC",
+        "name" : "PaperQuestTests"
+      }
+    }
+  ],
+  "version" : 1
+}

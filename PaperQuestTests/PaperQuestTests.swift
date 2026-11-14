@@ -261,6 +261,17 @@ struct NeurIPSPaperTests {
         #expect(!summary.texts.contains { $0.original.contains("Vinyals & Kaiser") })
     }
 
+    /// A math-heavy line where body text and subscripts have equal character counts.
+    /// Font-size ties used to follow randomized dictionary order, so this paragraph
+    /// appeared in some runs and vanished in others.
+    @Test func mathHeavyLineIsKeptDeterministically() {
+        #expect(summary.texts.contains { $0.original.hasPrefix("Where the projections are parameter matrices") })
+        // The subscript row inside the equation's height belongs to the equation.
+        let multiHead = summary.equations.first { $0.extractedEquation.hasPrefix("MultiHead") }
+        #expect(multiHead?.extractedEquation.contains("KWK") == true)
+        #expect(multiHead?.followUp == nil)
+    }
+
     @Test func regionsAreValid() throws {
         try expectValidRegions(summary, in: Fixture.neuripsPaper)
     }

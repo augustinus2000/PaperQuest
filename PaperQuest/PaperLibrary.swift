@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 
 struct SavedPaper: Codable, Identifiable, Hashable {
     let id: UUID
@@ -121,13 +122,24 @@ final class PaperLibrary {
     /// Parses the PDF off the main actor so large papers don't freeze the UI.
     @concurrent
     private nonisolated static func validatedPageCount(of url: URL) async throws -> Int {
-        try PDFImportService.importPaper(from: url).pages.count
+        try PDFImportService.importPaper(from: url).pageCount
     }
 
     /// Parses and analyzes off the main actor.
     @concurrent
     private nonisolated static func analyzePaper(at url: URL) async throws -> [PaperBlock] {
-        PaperAnalyzer.analyze(paper: try PDFImportService.importPaper(from: url))
+        let (imported, importTime) = try PerformanceLog.measure("PDF import") {
+            try PDFImportService.importPaper(from: url)
+        }
+        let (blocks, analysisTime) = PerformanceLog.measure("Layout analysis") {
+            PaperAnalyzer.analyze(paper: imported)
+        }
+        PerformanceLog.logger.info("""
+            open paper: pages=\(imported.pageCount) cards=\(blocks.count) \
+            import=\(PerformanceLog.milliseconds(importTime), privacy: .public) \
+            analysis=\(PerformanceLog.milliseconds(analysisTime), privacy: .public)
+            """)
+        return blocks
     }
 
     private func commit(_ updated: [SavedPaper]) throws {

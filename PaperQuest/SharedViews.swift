@@ -5,6 +5,7 @@
 //  Created by 임준혁 on 7/17/26.
 //
 
+import OSLog
 import PDFKit
 import SwiftUI
 import UIKit
@@ -374,7 +375,8 @@ final class PDFRegionRenderer {
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         format.opaque = true
-        let image = UIGraphicsImageRenderer(size: rect.size, format: format).image { context in
+        let (image, renderTime) = PerformanceLog.measure("Region render") {
+            UIGraphicsImageRenderer(size: rect.size, format: format).image { context in
             UIColor.white.setFill()
             context.fill(CGRect(origin: .zero, size: rect.size))
             let cgContext = context.cgContext
@@ -383,7 +385,13 @@ final class PDFRegionRenderer {
             cgContext.scaleBy(x: 1, y: -1)
             cgContext.translateBy(x: box.minX - rect.minX, y: box.minY - rect.minY)
             page.draw(with: .mediaBox, to: cgContext)
+            }
         }
+        PerformanceLog.logger.info("""
+            render region: page=\(region.pageIndex + 1) \
+            size=\(Int(rect.width))x\(Int(rect.height))pt scale=\(Int(scale)) \
+            time=\(PerformanceLog.milliseconds(renderTime), privacy: .public)
+            """)
         let cost = Int(rect.width * rect.height * scale * scale * 4)
         cache.setObject(image, forKey: key, cost: cost)
         return image

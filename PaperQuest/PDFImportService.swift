@@ -6,7 +6,6 @@
 //
 
 import PDFKit
-import UIKit
 
 nonisolated enum PDFImportError: LocalizedError {
     case invalidDocument
@@ -43,16 +42,7 @@ nonisolated enum PDFImportService {
             throw PDFImportError.invalidDocument
         }
 
-        let pages = extractPages(from: document)
-
-        let completeText = pages
-            .map(\.text)
-            .joined(separator: "\n\n")
-            .trimmingCharacters(
-                in: .whitespacesAndNewlines
-            )
-
-        guard !completeText.isEmpty else {
+        guard hasText(document) else {
             throw PDFImportError.emptyText
         }
 
@@ -61,36 +51,18 @@ nonisolated enum PDFImportService {
                 url.deletingPathExtension()
                     .lastPathComponent,
             document: document,
-            pages: pages,
-            completeText: completeText
+            pageCount: document.pageCount
         )
     }
 
-    private static func extractPages(
-        from document: PDFDocument
-    ) -> [PDFPageContent] {
-        var pages: [PDFPageContent] = []
-
-        for pageIndex in 0..<document.pageCount {
-            guard let page =
-                document.page(at: pageIndex)
-            else {
-                continue
-            }
-
-            let text = page.string?
-                .trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                ) ?? ""
-
-            pages.append(
-                PDFPageContent(
-                    pageIndex: pageIndex,
-                    text: text
-                )
-            )
+    /// Stops at the first page with text; the analyzer reads the lines itself,
+    /// so extracting every page's string here would only repeat that work.
+    private static func hasText(
+        _ document: PDFDocument
+    ) -> Bool {
+        (0..<document.pageCount).contains { pageIndex in
+            let text = document.page(at: pageIndex)?.string ?? ""
+            return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-
-        return pages
     }
 }

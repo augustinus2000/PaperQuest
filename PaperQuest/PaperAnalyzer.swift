@@ -184,7 +184,13 @@ nonisolated private struct LayoutAnalysis {
             guard let font = value as? PlatformFont else { return }
             weights[(font.pointSize * 2).rounded() / 2, default: 0] += range.length
         }
-        return weights.max { $0.value < $1.value }?.key ?? 0
+        return mostCommonSize(in: weights) ?? 0
+    }
+
+    /// Dictionary order is randomized per process, so ties must be broken explicitly.
+    /// Prefer the larger size: in a math-heavy line, body text and subscripts can tie.
+    private static func mostCommonSize(in weights: [CGFloat: Int]) -> CGFloat? {
+        weights.max { ($0.value, $0.key) < ($1.value, $1.key) }?.key
     }
 
     private static func dominantSize(of lines: [Line]) -> CGFloat {
@@ -192,7 +198,7 @@ nonisolated private struct LayoutAnalysis {
         for line in lines where line.fontSize > 0 {
             weights[line.fontSize, default: 0] += line.text.count
         }
-        return weights.max { $0.value < $1.value }?.key ?? 10
+        return mostCommonSize(in: weights) ?? 10
     }
 
     // MARK: Margins
@@ -664,6 +670,15 @@ nonisolated private struct LayoutAnalysis {
                             grew = true
                         }
                     }
+                }
+                // Sub/superscript rows sit inside the equation's height, neither above nor below it.
+                let groupIDs = Set(group.map(\.id))
+                let groupTop = group.map(\.rect.maxY).max()!
+                let groupBottom = group.map(\.rect.minY).min()!
+                group += lines.filter {
+                    !groupIDs.contains($0.id) && !used.contains($0.id)
+                        && $0.rect.midY < groupTop && $0.rect.midY > groupBottom
+                        && isDisplayLike($0, range: range)
                 }
                 guard group.count > 1 || !isNumber else { continue }
 
