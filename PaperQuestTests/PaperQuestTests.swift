@@ -281,3 +281,44 @@ private extension Array {
     /// The single element, or `nil` when there are zero or several.
     var only: Element? { count == 1 ? first : nil }
 }
+
+// MARK: - Reflow (large-text reading)
+
+@Suite("Reflow word extraction")
+struct ReflowTests {
+    @Test func demoAbstractSplitsIntoWords() throws {
+        let document = try #require(PDFDocument(url: Fixture.demoPaper))
+        let cards = CardSummary(cards: try Fixture.cards(from: Fixture.demoPaper))
+        let abstract = try #require(cards.texts.first)
+        let paragraph = ReflowExtractor.paragraph(for: abstract.regions, in: document)
+        #expect(paragraph.words.count > 100)
+        #expect(paragraph.words.first?.startsLine == true)
+        #expect(paragraph.letterHeight > 4 && paragraph.letterHeight < 20)
+    }
+
+    @Test(.enabled(if: Fixture.exists(Fixture.ieeePaper)))
+    func dropCapAndHyphensAreJoined() throws {
+        let document = try #require(PDFDocument(url: Fixture.ieeePaper))
+        let cards = CardSummary(cards: try Fixture.cards(from: Fixture.ieeePaper))
+        let intro = try #require(cards.texts.first { $0.original.hasPrefix("AUTOMOTIVE Ethernet") })
+        let words = ReflowExtractor.paragraph(for: intro.regions, in: document).words
+        // Heading row, then "A" + "UTOMOTIVE" as one word with a shrunken drop cap.
+        let capWord = try #require(words.first { $0.pieces.contains { $0.scale < 1 } })
+        #expect(capWord.pieces.count == 2)
+        // Words broken across lines ("hetero-" + "geneous") become one word.
+        let abstract = try #require(cards.texts.first)
+        let abstractWords = ReflowExtractor.paragraph(for: abstract.regions, in: document).words
+        #expect(abstractWords.contains { $0.pieces.count == 2 })
+    }
+
+    @Test(.enabled(if: Fixture.exists(Fixture.neuripsPaper)))
+    func runInHeadingStaysOnItsRow() throws {
+        let document = try #require(PDFDocument(url: Fixture.neuripsPaper))
+        let cards = CardSummary(cards: try Fixture.cards(from: Fixture.neuripsPaper))
+        let encoder = try #require(cards.texts.first { $0.original.hasPrefix("Encoder:") })
+        let words = ReflowExtractor.paragraph(for: encoder.regions, in: document).words
+        // Section heading row, then "Encoder:" starts a row and "The" continues it.
+        let startIndices = words.indices.filter { words[$0].startsLine }
+        #expect(startIndices.count == 2)
+    }
+}

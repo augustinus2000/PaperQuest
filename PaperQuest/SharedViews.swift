@@ -43,12 +43,51 @@ struct TitleBlockView: View {
 struct TextBlockView: View {
     let block: TextBlock
     let pdfURL: URL
+    /// Large re-wrapped text by default; the original layout is one tap away.
+    @AppStorage("showsOriginalLayout") private var showsOriginalLayout = false
+    @AppStorage("readingFontSize") private var fontSize = 19.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             CardHeader(pageNumber: block.pageNumber, section: block.section)
 
-            PDFRegionView(pdfURL: pdfURL, regions: block.regions, accessibilityText: block.original)
+            HStack {
+                Picker("보기 방식", selection: $showsOriginalLayout) {
+                    Text("크게 읽기").tag(false)
+                    Text("원본").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 200)
+
+                Spacer()
+
+                if !showsOriginalLayout {
+                    Button {
+                        fontSize = max(15, fontSize - 2)
+                    } label: {
+                        Image(systemName: "textformat.size.smaller")
+                    }
+                    .accessibilityLabel("글자 작게")
+                    .disabled(fontSize <= 15)
+                    Button {
+                        fontSize = min(29, fontSize + 2)
+                    } label: {
+                        Image(systemName: "textformat.size.larger")
+                    }
+                    .accessibilityLabel("글자 크게")
+                    .disabled(fontSize >= 29)
+                }
+            }
+            .buttonStyle(.bordered)
+
+            if showsOriginalLayout {
+                PDFRegionView(pdfURL: pdfURL, regions: block.regions, accessibilityText: block.original)
+            } else {
+                ReflowTextView(
+                    pdfURL: pdfURL, regions: block.regions,
+                    fontSize: fontSize, accessibilityText: block.original
+                )
+            }
 
             ExtractedTextDisclosure(text: block.original)
 
@@ -424,15 +463,22 @@ final class PDFRegionRenderer {
         }
     }
 
+    /// The open document for `url`, reused across cards of the same paper.
+    func document(for url: URL) -> PDFDocument? {
+        if openDocument?.url != url {
+            openDocument = PDFDocument(url: url).map { (url, $0) }
+        }
+        return openDocument?.document
+    }
+
     func image(for region: PDFRegion, in url: URL, scale: CGFloat = 4) -> UIImage? {
         let key = "\(url.lastPathComponent)#\(region.pageIndex)#\(region.rect.debugDescription)#\(scale)" as NSString
         if let cached = cache.object(forKey: key) {
             return cached
         }
-        if openDocument?.url != url {
-            openDocument = PDFDocument(url: url).map { (url, $0) }
-        }
-        guard let page = openDocument?.document.page(at: region.pageIndex) else { return nil }
+        guard let page = document(for: url)?.page(at: region.pageIndex) else { return nil }
+        // Link borders (boxes around citations) are not part of the typeset text.
+        page.displaysAnnotations = false
         let box = page.bounds(for: .mediaBox)
         // Whole points avoid an unpainted (dark) pixel column at fractional edges.
         let rect = region.rect.intersection(box).integral
