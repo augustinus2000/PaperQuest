@@ -89,9 +89,12 @@ struct ReadingAssistancePanel: View {
             if isTranslating || isExplaining {
                 ProgressView(isTranslating ? "기기에서 번역하는 중…" : "기기에서 해설을 만드는 중…")
             }
-            Text("영어 → 한국어 번역 · 처음에는 언어 모델 다운로드가 필요할 수 있어요. AI 해설은 Apple Intelligence 지원 기기에서 제공됩니다.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            // Only needed before anything has been generated for this card.
+            if assistance.translation == nil, assistance.explanation == nil {
+                Text("영어 → 한국어 번역 · 처음에는 언어 모델 다운로드가 필요할 수 있어요. AI 해설은 Apple Intelligence 지원 기기에서 제공됩니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             if let errorMessage {
                 Text(errorMessage)

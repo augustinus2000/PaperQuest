@@ -206,54 +206,57 @@ private struct ExtractedTextDisclosure: View {
 }
 
 /// Shows PDF regions exactly as typeset, so math, italics and figures stay intact.
+/// Tapping opens every region of the card in a zoomable sheet.
 struct PDFRegionView: View {
     let pdfURL: URL
     let regions: [PDFRegion]
     let accessibilityText: String
-    /// Figures and tables are often too small at card width, so they open in a zoomable sheet.
-    var isZoomable = false
-    @State private var zoomedRegion: PDFRegion?
+    var isZoomable = true
+    @State private var isZoomed = false
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            VStack(spacing: 0) {
-                ForEach(regions, id: \.self) { region in
-                    PDFRegionImage(pdfURL: pdfURL, region: region)
-                }
-            }
-            .padding(10)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.secondary.opacity(0.2))
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                if isZoomable {
-                    zoomedRegion = regions.first
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityText)
-            .accessibilityAddTraits(isZoomable ? .isButton : [])
-            .accessibilityHint(isZoomable ? "확대해서 봅니다" : "")
-
-            if isZoomable {
-                Label("탭해서 크게 보기", systemImage: "arrow.up.left.and.arrow.down.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            ForEach(regions, id: \.self) { region in
+                PDFRegionImage(pdfURL: pdfURL, region: region)
             }
         }
-        .sheet(item: $zoomedRegion) { region in
-            ZoomedRegionSheet(pdfURL: pdfURL, region: region)
+        .padding(6)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.2))
+        }
+        // The hint sits just above the box so it never covers the paper's text.
+        .overlay(alignment: .topTrailing) {
+            if isZoomable {
+                Label("탭하여 확대", systemImage: "arrow.up.left.and.arrow.down.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    // Lift it into the gap above the box (cards space their parts 16pt apart).
+                    .offset(y: -15)
+                    .accessibilityHidden(true)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isZoomable {
+                isZoomed = true
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+        .accessibilityAddTraits(isZoomable ? .isButton : [])
+        .accessibilityHint(isZoomable ? "확대해서 봅니다" : "")
+        .fullScreenCover(isPresented: $isZoomed) {
+            ZoomedRegionSheet(pdfURL: pdfURL, regions: regions)
         }
     }
 }
 
 private struct ZoomedRegionSheet: View {
     let pdfURL: URL
-    let region: PDFRegion
+    let regions: [PDFRegion]
     @Environment(\.dismiss) private var dismiss
     @State private var image: UIImage?
 
@@ -262,12 +265,13 @@ private struct ZoomedRegionSheet: View {
             Group {
                 if let image {
                     ZoomableImage(image: image)
+                        .ignoresSafeArea(edges: .bottom)
                 } else {
                     ProgressView()
                 }
             }
             .background(Color.white)
-            .navigationTitle("두 손가락으로 확대")
+            .navigationTitle("두 손가락 또는 두 번 탭으로 확대")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -277,16 +281,18 @@ private struct ZoomedRegionSheet: View {
         }
         .task {
             // Higher resolution than the card so text stays sharp when zoomed in.
-            image = PDFRegionRenderer.shared.image(for: region, in: pdfURL, scale: 6)
+            image = PDFRegionRenderer.shared.stitchedImage(for: regions, in: pdfURL, scale: 6)
         }
     }
 }
 
+/// Fits the image to the screen width, scrolls vertically when it is taller,
+/// and zooms with a pinch or a double tap.
 private struct ZoomableImage: UIViewRepresentable {
     let image: UIImage
 
     func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = UIScrollView()
+        let scrollView = CenteringScrollView()
         scrollView.minimumZoomScale = 1
         scrollView.maximumZoomScale = 6
         scrollView.backgroundColor = .white
@@ -296,15 +302,22 @@ private struct ZoomableImage: UIViewRepresentable {
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(imageView)
+        let aspect = image.size.height / max(image.size.width, 1)
         NSLayoutConstraint.activate([
             imageView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
             imageView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
             imageView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
             imageView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
-            imageView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
+            imageView.heightAnchor.constraint(equalTo: imageView.widthAnchor, multiplier: aspect)
         ])
         context.coordinator.imageView = imageView
+
+        let doubleTap = UITapGestureRecognizer(
+            target: context.coordinator, action: #selector(Coordinator.toggleZoom(_:))
+        )
+        doubleTap.numberOfTapsRequired = 2
+        scrollView.addGestureRecognizer(doubleTap)
         return scrollView
     }
 
@@ -319,6 +332,40 @@ private struct ZoomableImage: UIViewRepresentable {
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? {
             imageView
+        }
+
+        @objc func toggleZoom(_ gesture: UITapGestureRecognizer) {
+            guard let scrollView = gesture.view as? UIScrollView, let imageView else { return }
+            if scrollView.zoomScale > scrollView.minimumZoomScale {
+                scrollView.setZoomScale(scrollView.minimumZoomScale, animated: true)
+            } else {
+                // Zoom 2.5x around the tapped point.
+                let point = gesture.location(in: imageView)
+                let size = CGSize(
+                    width: scrollView.bounds.width / 2.5,
+                    height: scrollView.bounds.height / 2.5
+                )
+                let rect = CGRect(
+                    x: point.x - size.width / 2, y: point.y - size.height / 2,
+                    width: size.width, height: size.height
+                )
+                scrollView.zoom(to: rect, animated: true)
+            }
+        }
+    }
+}
+
+/// Keeps content smaller than the screen centered instead of pinned to the top-left.
+private final class CenteringScrollView: UIScrollView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Safe-area insets are added on top of contentInset automatically.
+        let visibleHeight = bounds.height - safeAreaInsets.top - safeAreaInsets.bottom
+        let horizontal = max(0, (bounds.width - contentSize.width) / 2)
+        let vertical = max(0, ((visibleHeight - contentSize.height) / 2).rounded(.down))
+        let inset = UIEdgeInsets(top: vertical, left: horizontal, bottom: vertical, right: horizontal)
+        if contentInset != inset {
+            contentInset = inset
         }
     }
 }
@@ -355,6 +402,26 @@ final class PDFRegionRenderer {
 
     private init() {
         cache.totalCostLimit = 80 * 1_024 * 1_024
+    }
+
+    /// All regions of a card stacked top to bottom, e.g. a paragraph spanning two columns.
+    func stitchedImage(for regions: [PDFRegion], in url: URL, scale: CGFloat) -> UIImage? {
+        let images = regions.compactMap { image(for: $0, in: url, scale: scale) }
+        guard images.count > 1 else { return images.first }
+        let width = images.map(\.size.width).max() ?? 0
+        let height = images.reduce(0) { $0 + $1.size.height }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            var y: CGFloat = 0
+            for image in images {
+                image.draw(at: CGPoint(x: 0, y: y))
+                y += image.size.height
+            }
+        }
     }
 
     func image(for region: PDFRegion, in url: URL, scale: CGFloat = 4) -> UIImage? {

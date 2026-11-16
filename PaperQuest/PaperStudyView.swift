@@ -47,7 +47,7 @@ struct PaperStudyView: View {
     var body: some View {
         Group {
             if let currentBlock {
-                VStack(spacing: 20) {
+                VStack(spacing: 10) {
                     progressSection
 
                     ScrollView {
@@ -58,14 +58,25 @@ struct PaperStudyView: View {
                         .padding(.vertical, 4)
                     }
                     .id(currentIndex)
-
-                    Text("추출된 카드 기준 · 논문 전체 분량과 다를 수 있어요")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    // Swipe sideways to move between cards; vertical drags still scroll.
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 30).onEnded { value in
+                            let horizontal = value.translation.width
+                            guard abs(horizontal) > 80,
+                                  abs(horizontal) > abs(value.translation.height) * 2
+                            else { return }
+                            if horizontal < 0 {
+                                goToNextBlock()
+                            } else if currentIndex > 0 {
+                                move(to: currentIndex - 1, completed: isCompleted)
+                            }
+                        }
+                    )
 
                     navigationButtons
                 }
-                .padding()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             } else {
                 ContentUnavailableView(
                     "학습 카드가 없습니다",
@@ -157,7 +168,7 @@ struct PaperStudyView: View {
                     systemImage: "chevron.left"
                 )
                 .frame(maxWidth: .infinity)
-                .padding()
+                .padding(.vertical, 8)
             }
             .buttonStyle(.bordered)
             .disabled(currentIndex == 0)
@@ -182,7 +193,7 @@ struct PaperStudyView: View {
                     )
                 }
                 .frame(maxWidth: .infinity)
-                .padding()
+                .padding(.vertical, 8)
             }
             .buttonStyle(.borderedProminent)
         }
