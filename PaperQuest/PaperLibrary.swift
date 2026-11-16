@@ -11,6 +11,14 @@ struct SavedPaper: Codable, Identifiable, Hashable {
     var cardCount = 0
     var isCompleted = false
     var analysisVersion: Int?
+    /// When the paper was last opened or advanced; `nil` until first read.
+    var lastOpenedAt: Date?
+
+    /// Share of cards read, 0...1.
+    var progress: Double {
+        guard cardCount > 0 else { return 0 }
+        return isCompleted ? 1 : Double(currentIndex + 1) / Double(cardCount)
+    }
 }
 
 @MainActor
@@ -77,6 +85,7 @@ final class PaperLibrary {
             max(0, updated[position].currentIndex), max(0, blocks.count - 1)
         )
         updated[position].cardCount = blocks.count
+        updated[position].lastOpenedAt = .now
         try commit(updated)
         return blocks
     }
@@ -87,7 +96,18 @@ final class PaperLibrary {
         updated[position].currentIndex = min(max(0, index), max(0, cardCount - 1))
         updated[position].cardCount = cardCount
         updated[position].isCompleted = completed
+        updated[position].lastOpenedAt = .now
         try commit(updated)
+    }
+
+    /// Most recently read first; papers never opened follow by date added.
+    var recentPapers: [SavedPaper] {
+        papers.sorted { ($0.lastOpenedAt ?? $0.addedAt) > ($1.lastOpenedAt ?? $1.addedAt) }
+    }
+
+    /// The paper to resume: the most recently read one that isn't finished.
+    var paperToResume: SavedPaper? {
+        recentPapers.first { $0.lastOpenedAt != nil && !$0.isCompleted && $0.cardCount > 0 }
     }
 
     func renamePaper(_ id: UUID, to title: String) throws {

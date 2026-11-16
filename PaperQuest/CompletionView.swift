@@ -21,7 +21,7 @@ struct CompletionView: View {
             ZStack {
                 Circle()
                     .fill(
-                        Color.blue.opacity(0.12)
+                        Color.accentColor.opacity(0.12)
                     )
                     .frame(
                         width: 110,
@@ -33,7 +33,7 @@ struct CompletionView: View {
                         "checkmark.circle.fill"
                 )
                 .font(.system(size: 68))
-                .foregroundStyle(.blue)
+                .foregroundStyle(Color.accentColor)
             }
 
             VStack(spacing: 10) {

@@ -150,7 +150,7 @@ struct PaperStudyView: View {
                 value: Double(currentIndex + 1),
                 total: Double(blocks.count)
             )
-            .tint(.blue)
+            .tint(.accentColor)
         }
     }
 

@@ -24,7 +24,7 @@ struct TitleBlockView: View {
                 pdfURL: pdfURL, regions: [block.region], accessibilityText: block.title, isZoomable: true
             )
 
-            StudySection(title: "제목", systemImage: "doc.richtext", content: block.title, tint: .blue)
+            StudySection(title: "제목", systemImage: "doc.richtext", content: block.title, tint: .accentColor)
                 .textSelection(.enabled)
 
             // Explaining a title adds little; translation is enough here.
