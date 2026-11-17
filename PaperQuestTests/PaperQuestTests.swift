@@ -354,6 +354,20 @@ struct ReflowTests {
         #expect(abs(words.count - textWords) <= textWords / 10)
     }
 
+    /// On the √d_k line every glyph box is inflated. The first letter ("query") is not a drop cap,
+    /// and the √ word keeps its bar, which reaches above a normal line.
+    @Test(.enabled(if: Fixture.exists(Fixture.neuripsPaper)))
+    func squareRootLineKeepsItsShape() throws {
+        let document = try #require(PDFDocument(url: Fixture.neuripsPaper))
+        let cards = CardSummary(cards: try Fixture.cards(from: Fixture.neuripsPaper))
+        let card = try #require(cards.texts.first { $0.original.hasPrefix("We call our particular attention") })
+        let words = ReflowExtractor.paragraph(for: card.regions, in: document, cardText: card.original).words
+        #expect(!words.contains { $0.pieces.contains { $0.scale != 1 } }, "no drop cap in this card")
+        let ascents = words.flatMap(\.pieces).map { $0.rect.maxY - $0.baseline }
+        let typical = ascents.sorted()[ascents.count / 2]
+        #expect(ascents.contains { $0 > typical * 1.1 }, "the √ word is taller than the others")
+    }
+
     @Test(.enabled(if: Fixture.exists(Fixture.neuripsPaper)))
     func runInHeadingStaysOnItsRow() throws {
         let document = try #require(PDFDocument(url: Fixture.neuripsPaper))

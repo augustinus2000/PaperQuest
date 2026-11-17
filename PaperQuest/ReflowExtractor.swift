@@ -92,7 +92,7 @@ nonisolated enum ReflowExtractor {
             }
             let rows = lineGlyphs.flatMap { line in
                 visualRows(line.enumerated().map { offset, glyph in
-                    let isDropCap = offset == 0 && glyph.isLetter && glyph.box.height > regionHeight * 1.8
+                    let isDropCap = offset == 0 && glyph.isUppercase && glyph.box.height > regionHeight * 1.8
                     guard !isDropCap, !glyph.box.isNull, glyph.box.height > regionHeight * 1.3 else { return glyph }
                     let box = glyph.box
                     // Best: the largest part of the box not covered by neighboring lines.
@@ -117,7 +117,8 @@ nonisolated enum ReflowExtractor {
             for row in readingOrder(rows, tolerance: regionHeight * 0.5) {
                 var glyphs = row
                 // A drop cap spans several lines; shrink it to a capital and attach it to the next word.
-                if let first = glyphs.first, first.isLetter, first.box.height > regionHeight * 1.8 {
+                // Only capitals: on a line with a tall √ every glyph box is inflated, including a first "q".
+                if let first = glyphs.first, first.isUppercase, first.box.height > regionHeight * 1.8 {
                     dropCap = first.box
                     glyphs.removeFirst()
                 }
@@ -152,12 +153,23 @@ nonisolated enum ReflowExtractor {
                 // around the baseline so the row isn't spaced further apart than the others.
                 let isEstimated = inkLine != nil && glyphs.contains(where: \.isEstimated)
                 var lineWords = groups.map { word in
-                    var rect = union(word.map(\.box))
+                    let boxes = union(word.map(\.box))
+                    var rect = boxes
                     if isEstimated {
                         rect = rect.intersection(CGRect(
                             x: rect.minX, y: baseline - normalDescent,
                             width: rect.width, height: normalDescent + normalAscent
                         ))
+                    }
+                    // Fit the crop to the ink that belongs to this line: shapes touching the band
+                    // just above the baseline. This drops marks from the next line (a √ bar below
+                    // "and") and, on estimated rows, reaches up to keep a √ bar that is taller than
+                    // a normal line.
+                    let search = isEstimated ? boxes.insetBy(dx: 0, dy: -regionHeight * 0.3) : boxes
+                    if let extent = ink?.extent(in: search, band: baseline...(baseline + regionHeight * 0.3)) {
+                        let bottom = min(max(rect.minY, extent.bottom - 0.5), baseline)
+                        let top = isEstimated ? max(rect.maxY, extent.top + 0.5) : rect.maxY
+                        rect = CGRect(x: rect.minX, y: bottom, width: rect.width, height: top - bottom)
                     }
                     return ReflowWord(
                         pieces: [ReflowWord.Piece(pageIndex: region.pageIndex, rect: rect, baseline: baseline)],
@@ -305,6 +317,9 @@ nonisolated enum ReflowExtractor {
         var isLetter: Bool {
             UnicodeScalar(character).map { CharacterSet.letters.contains($0) } ?? false
         }
+        var isUppercase: Bool {
+            UnicodeScalar(character).map { CharacterSet.uppercaseLetters.contains($0) } ?? false
+        }
         var isLowercase: Bool {
             UnicodeScalar(character).map { CharacterSet.lowercaseLetters.contains($0) } ?? false
         }
@@ -423,6 +438,51 @@ nonisolated enum ReflowExtractor {
             var inkTop = peak
             while inkTop > 0, counts[inkTop - 1] > 0 { inkTop -= 1 }
             return (pageY(ofRow: top + bottom + 1), pageY(ofRow: top + inkTop))
+        }
+
+        /// The top and bottom of the connected shapes in `box` that reach into `band` (page y).
+        /// Marks that only touch the box from a neighboring line are left out.
+        func extent(in box: CGRect, band: ClosedRange<CGFloat>) -> (top: CGFloat, bottom: CGFloat)? {
+            let left = max(0, Int(((box.minX - rect.minX) * scale).rounded(.down)))
+            let right = min(width, Int(((box.maxX - rect.minX) * scale).rounded(.up)))
+            let top = max(0, Int(((rect.maxY - box.maxY) * scale).rounded(.down)))
+            let bottom = min(height, Int(((rect.maxY - box.minY) * scale).rounded(.up)))
+            guard left < right, top < bottom else { return nil }
+            let bandTop = Int(((rect.maxY - band.upperBound) * scale).rounded(.down))
+            let bandBottom = Int(((rect.maxY - band.lowerBound) * scale).rounded(.up))
+            let boxWidth = right - left
+            var visited = [Bool](repeating: false, count: boxWidth * (bottom - top))
+            var minRow = Int.max, maxRow = Int.min
+            for startY in top..<bottom {
+                for startX in left..<right {
+                    let startIndex = (startY - top) * boxWidth + (startX - left)
+                    guard !visited[startIndex], pixels[startY * width + startX] < 160 else { continue }
+                    // Flood-fill one connected shape (8-neighborhood).
+                    visited[startIndex] = true
+                    var stack = [(startX, startY)]
+                    var shapeTop = startY, shapeBottom = startY
+                    while let (x, y) = stack.popLast() {
+                        shapeTop = min(shapeTop, y)
+                        shapeBottom = max(shapeBottom, y)
+                        for dy in -1...1 {
+                            for dx in -1...1 {
+                                let nx = x + dx, ny = y + dy
+                                guard nx >= left, nx < right, ny >= top, ny < bottom else { continue }
+                                let index = (ny - top) * boxWidth + (nx - left)
+                                guard !visited[index], pixels[ny * width + nx] < 160 else { continue }
+                                visited[index] = true
+                                stack.append((nx, ny))
+                            }
+                        }
+                    }
+                    if shapeTop <= bandBottom, shapeBottom >= bandTop {
+                        minRow = min(minRow, shapeTop)
+                        maxRow = max(maxRow, shapeBottom)
+                    }
+                }
+            }
+            guard minRow <= maxRow else { return nil }
+            return (pageY(ofRow: minRow), pageY(ofRow: maxRow + 1))
         }
 
         /// The tight bounds of the tallest unbroken run of ink rows in `box`,
