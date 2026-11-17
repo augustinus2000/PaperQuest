@@ -311,6 +311,19 @@ struct ReflowTests {
         #expect(abstractWords.contains { $0.pieces.count == 2 })
     }
 
+    /// A line with a tall √ reports inflated glyph boxes that reach into the lines above.
+    /// Its words must appear once, in place, with no stray rows.
+    @Test(.enabled(if: Fixture.exists(Fixture.neuripsPaper)))
+    func tallSymbolLineIsNotDuplicated() throws {
+        let document = try #require(PDFDocument(url: Fixture.neuripsPaper))
+        let cards = CardSummary(cards: try Fixture.cards(from: Fixture.neuripsPaper))
+        let card = try #require(cards.texts.first { $0.original.hasPrefix("Similarly to other sequence") })
+        let words = ReflowExtractor.paragraph(for: card.regions, in: document, cardText: card.original).words
+        // Heading (4 words) + paragraph words; the bug added a whole extra copy of two lines.
+        let textWords = card.original.split(separator: " ").count + 4
+        #expect(abs(words.count - textWords) <= textWords / 10)
+    }
+
     @Test(.enabled(if: Fixture.exists(Fixture.neuripsPaper)))
     func runInHeadingStaysOnItsRow() throws {
         let document = try #require(PDFDocument(url: Fixture.neuripsPaper))

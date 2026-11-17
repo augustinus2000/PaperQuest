@@ -21,7 +21,7 @@ struct TitleBlockView: View {
             CardHeader(pageNumber: block.pageNumber, section: "제목 · 저자")
 
             PDFRegionView(
-                pdfURL: pdfURL, regions: [block.region], accessibilityText: block.title, isZoomable: true
+                pdfURL: pdfURL, regions: [block.region], accessibilityText: block.title, isZoomable: true, trimsWhitespace: true
             )
 
             StudySection(title: "제목", systemImage: "doc.richtext", content: block.title, tint: .accentColor)
@@ -120,7 +120,7 @@ struct FigureBlockView: View {
             CardHeader(pageNumber: block.pageNumber, section: block.section)
 
             PDFRegionView(
-                pdfURL: pdfURL, regions: [block.region], accessibilityText: block.caption, isZoomable: true
+                pdfURL: pdfURL, regions: [block.region], accessibilityText: block.caption, isZoomable: true, trimsWhitespace: true
             )
 
             StudySection(
@@ -160,7 +160,7 @@ struct TableBlockView: View {
             .textSelection(.enabled)
 
             PDFRegionView(
-                pdfURL: pdfURL, regions: [block.region], accessibilityText: block.caption, isZoomable: true
+                pdfURL: pdfURL, regions: [block.region], accessibilityText: block.caption, isZoomable: true, trimsWhitespace: true
             )
 
             ReadingAssistancePanel(
@@ -251,12 +251,14 @@ struct PDFRegionView: View {
     let regions: [PDFRegion]
     let accessibilityText: String
     var isZoomable = true
+    /// Crop white margins so figures and tables fill the card width.
+    var trimsWhitespace = false
     @State private var isZoomed = false
 
     var body: some View {
         VStack(spacing: 0) {
             ForEach(regions, id: \.self) { region in
-                PDFRegionImage(pdfURL: pdfURL, region: region)
+                PDFRegionImage(pdfURL: pdfURL, region: region, trimsWhitespace: trimsWhitespace)
             }
         }
         .padding(6)
@@ -288,7 +290,7 @@ struct PDFRegionView: View {
         .accessibilityAddTraits(isZoomable ? .isButton : [])
         .accessibilityHint(isZoomable ? "확대해서 봅니다" : "")
         .fullScreenCover(isPresented: $isZoomed) {
-            ZoomedRegionSheet(pdfURL: pdfURL, regions: regions)
+            ZoomedRegionSheet(pdfURL: pdfURL, regions: regions, trimsWhitespace: trimsWhitespace)
         }
     }
 }
@@ -296,6 +298,7 @@ struct PDFRegionView: View {
 private struct ZoomedRegionSheet: View {
     let pdfURL: URL
     let regions: [PDFRegion]
+    var trimsWhitespace = false
     @Environment(\.dismiss) private var dismiss
     @State private var image: UIImage?
 
@@ -320,7 +323,9 @@ private struct ZoomedRegionSheet: View {
         }
         .task {
             // Higher resolution than the card so text stays sharp when zoomed in.
-            image = PDFRegionRenderer.shared.stitchedImage(for: regions, in: pdfURL, scale: 6)
+            let renderer = PDFRegionRenderer.shared
+            let shown = trimsWhitespace ? regions.map { renderer.trimmed($0, in: pdfURL) } : regions
+            image = renderer.stitchedImage(for: shown, in: pdfURL, scale: 6)
         }
     }
 }
@@ -412,6 +417,7 @@ private final class CenteringScrollView: UIScrollView {
 private struct PDFRegionImage: View {
     let pdfURL: URL
     let region: PDFRegion
+    var trimsWhitespace = false
     @State private var image: UIImage?
 
     var body: some View {
@@ -426,7 +432,9 @@ private struct PDFRegionImage: View {
             }
         }
         .task(id: region) {
-            image = PDFRegionRenderer.shared.image(for: region, in: pdfURL)
+            let renderer = PDFRegionRenderer.shared
+            let shown = trimsWhitespace ? renderer.trimmed(region, in: pdfURL) : region
+            image = renderer.image(for: shown, in: pdfURL)
         }
     }
 }
@@ -461,6 +469,52 @@ final class PDFRegionRenderer {
                 y += image.size.height
             }
         }
+    }
+
+    private var trimmedRegions: [PDFRegion: PDFRegion] = [:]
+
+    /// The region shrunk to its ink, so figures fill the card instead of their white margins.
+    func trimmed(_ region: PDFRegion, in url: URL) -> PDFRegion {
+        if let cached = trimmedRegions[region] {
+            return cached
+        }
+        guard let page = document(for: url)?.page(at: region.pageIndex) else { return region }
+        let rect = region.rect.intersection(page.bounds(for: .mediaBox))
+        let scale: CGFloat = 1.5
+        let width = Int(rect.width * scale), height = Int(rect.height * scale)
+        guard width > 4, height > 4,
+              let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+              )
+        else { return region }
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.scaleBy(x: scale, y: scale)
+        context.translateBy(x: -rect.minX, y: -rect.minY)
+        page.displaysAnnotations = false
+        page.draw(with: .mediaBox, to: context)
+        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return region }
+
+        // Bitmap rows run top to bottom.
+        var minRow = height, maxRow = -1, minColumn = width, maxColumn = -1
+        for row in 0..<height {
+            for column in 0..<width where data[row * width + column] < 235 {
+                minRow = min(minRow, row); maxRow = max(maxRow, row)
+                minColumn = min(minColumn, column); maxColumn = max(maxColumn, column)
+            }
+        }
+        guard maxRow >= 0 else { return region }
+        let padding: CGFloat = 4
+        let ink = CGRect(
+            x: rect.minX + CGFloat(minColumn) / scale - padding,
+            y: rect.maxY - CGFloat(maxRow + 1) / scale - padding,
+            width: CGFloat(maxColumn - minColumn + 1) / scale + padding * 2,
+            height: CGFloat(maxRow - minRow + 1) / scale + padding * 2
+        ).intersection(rect)
+        let result = PDFRegion(pageIndex: region.pageIndex, rect: ink)
+        trimmedRegions[region] = result
+        return result
     }
 
     /// The open document for `url`, reused across cards of the same paper.

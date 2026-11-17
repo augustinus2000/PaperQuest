@@ -45,7 +45,10 @@ struct ReflowTextView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
         .task(id: "\(regions.hashValue)-\(fontSize)-\(displayScale)") {
-            words = ReflowRenderer.words(for: regions, in: pdfURL, fontSize: fontSize, displayScale: displayScale)
+            words = ReflowRenderer.words(
+                for: regions, in: pdfURL, cardText: accessibilityText,
+                fontSize: fontSize, displayScale: displayScale
+            )
         }
     }
 }
@@ -63,10 +66,12 @@ struct RenderedWord {
 enum ReflowRenderer {
     private static let context = CIContext()
 
-    static func words(for regions: [PDFRegion], in url: URL, fontSize: CGFloat, displayScale: CGFloat) -> [RenderedWord] {
+    static func words(
+        for regions: [PDFRegion], in url: URL, cardText: String, fontSize: CGFloat, displayScale: CGFloat
+    ) -> [RenderedWord] {
         guard let document = PDFRegionRenderer.shared.document(for: url) else { return [] }
         let (paragraph, extractTime) = PerformanceLog.measure("Reflow extract") {
-            ReflowExtractor.paragraph(for: regions, in: document)
+            ReflowExtractor.paragraph(for: regions, in: document, cardText: cardText)
         }
         // A typical letter box is about 1.15 × the font size.
         let zoom = fontSize * 1.15 / max(paragraph.letterHeight, 1)

@@ -34,7 +34,11 @@ nonisolated struct ReflowParagraph: Sendable {
 
 /// Splits a card's PDF regions into words using per-character bounds.
 nonisolated enum ReflowExtractor {
-    static func paragraph(for regions: [PDFRegion], in document: PDFDocument) -> ReflowParagraph {
+    /// `cardText` is the card's extracted text; rows that don't belong to it are dropped.
+    static func paragraph(for regions: [PDFRegion], in document: PDFDocument, cardText: String? = nil) -> ReflowParagraph {
+        let cardKey = cardText.map(searchKey)
+        /// Rows above the first matching row (section headings) are kept; later strays are not.
+        var seenCardText = false
         var words: [ReflowWord] = []
         var letterHeights: [CGFloat] = []
         var previousLineWasShort = false
@@ -58,17 +62,36 @@ nonisolated enum ReflowExtractor {
                 lineGlyphs.append(glyphs(in: range, page: page))
             }
             let regionHeight = median(lineGlyphs.flatMap { $0.filter(\.isLetter).map(\.box.height) }) ?? 10
-            // Beside a drop cap, PDFKit reports every glyph with the drop cap's height.
-            // Keep the drop cap itself, and clamp the others to a normal line at the top.
+            // Beside a drop cap or a tall symbol (√), PDFKit can report every glyph on the line
+            // with an inflated height. The real line sits at the top or the bottom of that box:
+            // pick the side that doesn't overlap the normal lines around it.
+            let normalBands: [ClosedRange<CGFloat>] = lineGlyphs.compactMap { line in
+                let boxes = line.filter(\.isLetter).map(\.box)
+                guard let height = median(boxes.map(\.height)), height <= regionHeight * 1.3,
+                      let low = median(boxes.map(\.minY)) else { return nil }
+                return low...(low + height)
+            }
+            func overlap(_ range: ClosedRange<CGFloat>) -> CGFloat {
+                normalBands.reduce(0) { $0 + max(0, min($1.upperBound, range.upperBound) - max($1.lowerBound, range.lowerBound)) }
+            }
             let rows = lineGlyphs.flatMap { line in
                 visualRows(line.enumerated().map { offset, glyph in
-                    let isDropCap = offset == 0 && glyph.isLetter
-                    guard !isDropCap, !glyph.box.isNull, glyph.box.height > regionHeight * 1.8 else { return glyph }
+                    let isDropCap = offset == 0 && glyph.isLetter && glyph.box.height > regionHeight * 1.8
+                    guard !isDropCap, !glyph.box.isNull, glyph.box.height > regionHeight * 1.3 else { return glyph }
                     let box = glyph.box
-                    return Glyph(
-                        character: glyph.character,
-                        box: CGRect(x: box.minX, y: box.maxY - regionHeight, width: box.width, height: regionHeight)
-                    )
+                    // Best: the largest part of the box not covered by neighboring lines.
+                    if let free = largestGap(in: box.minY...box.maxY, excluding: normalBands),
+                       free.upperBound - free.lowerBound >= regionHeight * 0.8 {
+                        let height = min(free.upperBound - free.lowerBound, regionHeight * 1.6)
+                        let y = free.upperBound - height
+                        return Glyph(character: glyph.character, box: CGRect(x: box.minX, y: y, width: box.width, height: height))
+                    }
+                    // Otherwise the end (top or bottom) that overlaps the neighbors less.
+                    let height = regionHeight * 1.2
+                    let top = (box.maxY - height)...box.maxY
+                    let bottom = box.minY...(box.minY + height)
+                    let y = overlap(bottom) < overlap(top) ? bottom.lowerBound : top.lowerBound
+                    return Glyph(character: glyph.character, box: CGRect(x: box.minX, y: y, width: box.width, height: height))
                 })
             }
             var previousRow: CGRect?
@@ -85,6 +108,21 @@ nonisolated enum ReflowExtractor {
                     glyphs.removeFirst()
                 }
                 guard !glyphs.isEmpty else { continue }
+
+                // Region selections also pick up neighboring lines whose glyph boxes reach into
+                // the region (e.g. a line with a tall √ from the next card). Skip rows not in this card.
+                if let cardKey {
+                    let rowKey = searchKey(String(utf16CodeUnits: glyphs.filter { !$0.box.isNull }.map(\.character),
+                                                  count: glyphs.filter { !$0.box.isNull }.count))
+                    if rowKey.count >= 6 {
+                        if belongs(rowKey, to: cardKey) {
+                            seenCardText = true
+                        } else if seenCardText {
+                            dropCap = nil
+                            continue
+                        }
+                    }
+                }
 
                 let letters = glyphs.filter(\.isLetter).map(\.box)
                 letterHeights += letters.map(\.height)
@@ -185,6 +223,36 @@ nonisolated enum ReflowExtractor {
             bucket.append(row)
         }
         return ordered + bucket.sorted { left($0) < left($1) }
+    }
+
+    /// The longest stretch of `range` left after removing `bands`.
+    private static func largestGap(in range: ClosedRange<CGFloat>, excluding bands: [ClosedRange<CGFloat>]) -> ClosedRange<CGFloat>? {
+        var gaps = [range]
+        for band in bands {
+            gaps = gaps.flatMap { gap -> [ClosedRange<CGFloat>] in
+                guard band.upperBound > gap.lowerBound, band.lowerBound < gap.upperBound else { return [gap] }
+                var pieces: [ClosedRange<CGFloat>] = []
+                if band.lowerBound > gap.lowerBound { pieces.append(gap.lowerBound...band.lowerBound) }
+                if band.upperBound < gap.upperBound { pieces.append(band.upperBound...gap.upperBound) }
+                return pieces
+            }
+        }
+        return gaps.max { ($0.upperBound - $0.lowerBound) < ($1.upperBound - $1.lowerBound) }
+    }
+
+    /// Letters and digits only, lowercased, with ligatures decomposed ("ﬁ" → "fi").
+    private static func searchKey(_ text: String) -> String {
+        String(text.precomposedStringWithCompatibilityMapping.lowercased().filter { $0.isLetter || $0.isNumber })
+    }
+
+    /// Most 8-character chunks of the row appear in the card, tolerating small extraction differences.
+    private static func belongs(_ rowKey: String, to cardKey: String) -> Bool {
+        let characters = Array(rowKey)
+        let chunks = stride(from: 0, to: characters.count, by: 8).map {
+            String(characters[$0..<min($0 + 8, characters.count)])
+        }.filter { $0.count >= 4 }
+        guard !chunks.isEmpty else { return true }
+        return Double(chunks.filter { cardKey.contains($0) }.count) >= Double(chunks.count) * 0.5
     }
 
     // MARK: Glyphs
