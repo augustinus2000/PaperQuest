@@ -144,7 +144,9 @@ nonisolated enum ReflowExtractor {
                 } ?? false
                 // Paragraph indents are small; text wrapped around a drop cap is indented further.
                 let indent = rowRect.minX - columnLeft
-                let indented = indent > 4 && indent < 18
+                // Rows sharing the previous row's indent (text wrapped beside a drop cap) continue it.
+                let sameIndentAsAbove = previousRow.map { abs($0.minX - rowRect.minX) < 2 } ?? false
+                let indented = indent > 4 && indent < 18 && !sameIndentAsAbove
                 if words.isEmpty || (!continuesRow && (indented || previousLineWasShort)) {
                     lineWords[0] = ReflowWord(pieces: lineWords[0].pieces, startsLine: true)
                 }

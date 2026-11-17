@@ -141,13 +141,23 @@ enum ReflowRenderer {
         }
     }
 
-    private static func sheet(page: PDFPage?, rect: CGRect, pixelScale: CGFloat) -> Sheet? {
-        guard let page, !rect.isNull, rect.width > 0, rect.height > 0 else { return nil }
+    private static func sheet(page: PDFPage?, rect wordsRect: CGRect, pixelScale: CGFloat) -> Sheet? {
+        guard let page, !wordsRect.isNull, wordsRect.width > 0, wordsRect.height > 0 else { return nil }
         page.displaysAnnotations = false
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        let pixelSize = CGSize(width: rect.width * pixelScale, height: rect.height * pixelScale)
+        // Whole pixels with a margin: a partly painted edge pixel would turn into a line of "ink"
+        // along words at the sheet's right or bottom edge.
+        let padded = wordsRect.insetBy(dx: -2, dy: -2)
+        let pixelSize = CGSize(
+            width: (padded.width * pixelScale).rounded(.up),
+            height: (padded.height * pixelScale).rounded(.up)
+        )
+        let rect = CGRect(
+            x: padded.minX, y: padded.maxY - pixelSize.height / pixelScale,
+            width: pixelSize.width / pixelScale, height: pixelSize.height / pixelScale
+        )
         let rendered = UIGraphicsImageRenderer(size: pixelSize, format: format).image { context in
             UIColor.white.setFill()
             context.fill(CGRect(origin: .zero, size: pixelSize))
