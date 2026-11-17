@@ -311,6 +311,26 @@ struct ReflowTests {
         #expect(abstractWords.contains { $0.pieces.count == 2 })
     }
 
+    /// The demo introduction opens with a two-line drop cap "S".
+    /// It must shrink to a capital that sits on the row's baseline, and the line wrapped
+    /// beside it (inflated glyph boxes) must share the same baseline geometry as other rows.
+    @Test func demoDropCapSitsOnTheBaseline() throws {
+        let document = try #require(PDFDocument(url: Fixture.demoPaper))
+        let cards = CardSummary(cards: try Fixture.cards(from: Fixture.demoPaper))
+        let intro = try #require(cards.texts.first { $0.original.hasPrefix("S") && $0.original.contains("CIENTIFIC") })
+        let words = ReflowExtractor.paragraph(for: intro.regions, in: document, cardText: intro.original).words
+        let capWord = try #require(words.first { $0.pieces.contains { $0.scale < 1 } })
+        let cap = capWord.pieces[0], rest = capWord.pieces[1]
+        // On the baseline (round letters overshoot slightly) and no taller than the row's capitals.
+        #expect(abs(cap.baseline - cap.rect.minY) < 0.01)
+        #expect(cap.rect.height * cap.scale <= (rest.rect.maxY - rest.baseline) + 0.5)
+        // Every word's top sits a similar height above its baseline: no row drawn lower than the rest.
+        let ascents = words.flatMap(\.pieces).filter { $0.scale == 1 }.map { $0.rect.maxY - $0.baseline }
+        let typical = ascents.sorted()[ascents.count / 2]
+        let outliers = ascents.filter { abs($0 - typical) > typical * 0.35 }
+        #expect(outliers.isEmpty, "ascents: \(ascents.map { ($0 * 10).rounded() / 10 })")
+    }
+
     /// A line with a tall √ reports inflated glyph boxes that reach into the lines above.
     /// Its words must appear once, in place, with no stray rows.
     @Test(.enabled(if: Fixture.exists(Fixture.neuripsPaper)))
@@ -335,3 +355,4 @@ struct ReflowTests {
         #expect(startIndices.count == 2)
     }
 }
+

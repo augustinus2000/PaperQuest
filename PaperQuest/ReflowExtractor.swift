@@ -61,6 +61,10 @@ nonisolated enum ReflowExtractor {
                 guard range.location != NSNotFound, range.length > 0 else { continue }
                 lineGlyphs.append(glyphs(in: range, page: page))
             }
+            let inkRect = lineGlyphs.joined().map(\.box).filter { !$0.isNull }
+                .reduce(region.rect) { $0.union($1) }
+                .intersection(page.bounds(for: .mediaBox))
+            let ink = InkMap(page: page, rect: inkRect)
             let regionHeight = median(lineGlyphs.flatMap { $0.filter(\.isLetter).map(\.box.height) }) ?? 10
             // Beside a drop cap or a tall symbol (√), PDFKit can report every glyph on the line
             // with an inflated height. The real line sits at the top or the bottom of that box:
@@ -71,6 +75,18 @@ nonisolated enum ReflowExtractor {
                       let low = median(boxes.map(\.minY)) else { return nil }
                 return low...(low + height)
             }
+            // How far a normal line's glyph boxes reach above and below its baseline.
+            var ascents: [CGFloat] = [], descents: [CGFloat] = []
+            for line in lineGlyphs {
+                let boxes = line.filter(\.isLetter).map(\.box)
+                guard let top = median(boxes.map(\.maxY)), let bottom = median(boxes.map(\.minY)),
+                      boxes.allSatisfy({ $0.height <= regionHeight * 1.3 }),
+                      let baseline = ink?.line(in: union(boxes))?.baseline else { continue }
+                ascents.append(top - baseline)
+                descents.append(baseline - bottom)
+            }
+            let normalAscent = median(ascents) ?? regionHeight * 0.8
+            let normalDescent = median(descents) ?? regionHeight * 0.3
             func overlap(_ range: ClosedRange<CGFloat>) -> CGFloat {
                 normalBands.reduce(0) { $0 + max(0, min($1.upperBound, range.upperBound) - max($1.lowerBound, range.lowerBound)) }
             }
@@ -84,27 +100,25 @@ nonisolated enum ReflowExtractor {
                        free.upperBound - free.lowerBound >= regionHeight * 0.8 {
                         let height = min(free.upperBound - free.lowerBound, regionHeight * 1.6)
                         let y = free.upperBound - height
-                        return Glyph(character: glyph.character, box: CGRect(x: box.minX, y: y, width: box.width, height: height))
+                        return Glyph(character: glyph.character, box: CGRect(x: box.minX, y: y, width: box.width, height: height), isEstimated: true)
                     }
                     // Otherwise the end (top or bottom) that overlaps the neighbors less.
                     let height = regionHeight * 1.2
                     let top = (box.maxY - height)...box.maxY
                     let bottom = box.minY...(box.minY + height)
                     let y = overlap(bottom) < overlap(top) ? bottom.lowerBound : top.lowerBound
-                    return Glyph(character: glyph.character, box: CGRect(x: box.minX, y: y, width: box.width, height: height))
+                    return Glyph(character: glyph.character, box: CGRect(x: box.minX, y: y, width: box.width, height: height), isEstimated: true)
                 })
             }
             var previousRow: CGRect?
-            var dropCap: ReflowWord.Piece?
+            /// A drop cap's glyph box, waiting for the row it starts.
+            var dropCap: CGRect?
 
             for row in readingOrder(rows, tolerance: regionHeight * 0.5) {
                 var glyphs = row
                 // A drop cap spans several lines; shrink it to a capital and attach it to the next word.
                 if let first = glyphs.first, first.isLetter, first.box.height > regionHeight * 1.8 {
-                    dropCap = ReflowWord.Piece(
-                        pageIndex: region.pageIndex, rect: first.box, baseline: first.box.minY,
-                        scale: regionHeight / first.box.height
-                    )
+                    dropCap = first.box
                     glyphs.removeFirst()
                 }
                 guard !glyphs.isEmpty else { continue }
@@ -127,13 +141,26 @@ nonisolated enum ReflowExtractor {
                 let letters = glyphs.filter(\.isLetter).map(\.box)
                 letterHeights += letters.map(\.height)
                 let rowRect = union(glyphs.map(\.box).filter { !$0.isNull })
-                let baseline = mostCommon(letters.map { ($0.minY * 2).rounded() / 2 }) ?? rowRect.minY
+                // The baseline from the ink, so rows whose glyph boxes were inflated still line up.
+                let inkLine = ink?.line(in: rowRect)
+                let baseline = inkLine?.baseline
+                    ?? mostCommon(letters.map { ($0.minY * 2).rounded() / 2 }) ?? rowRect.minY
                 let typicalHeight = median(letters.map(\.height)) ?? regionHeight
 
                 let groups = group(glyphs, gapLimit: typicalHeight * 0.3)
+                // Estimated boxes reach into the gaps between lines; keep a normal line's height
+                // around the baseline so the row isn't spaced further apart than the others.
+                let isEstimated = inkLine != nil && glyphs.contains(where: \.isEstimated)
                 var lineWords = groups.map { word in
-                    ReflowWord(
-                        pieces: [ReflowWord.Piece(pageIndex: region.pageIndex, rect: union(word.map(\.box)), baseline: baseline)],
+                    var rect = union(word.map(\.box))
+                    if isEstimated {
+                        rect = rect.intersection(CGRect(
+                            x: rect.minX, y: baseline - normalDescent,
+                            width: rect.width, height: normalDescent + normalAscent
+                        ))
+                    }
+                    return ReflowWord(
+                        pieces: [ReflowWord.Piece(pageIndex: region.pageIndex, rect: rect, baseline: baseline)],
                         startsLine: false
                     )
                 }
@@ -152,7 +179,17 @@ nonisolated enum ReflowExtractor {
                 }
                 previousLineWasShort = rowRect.maxX < columnLeft + (columnRight - columnLeft) * 0.85
 
-                if let cap = dropCap {
+                if let capBox = dropCap {
+                    // Crop the letter to its ink (its box also catches marks from the lines below)
+                    // and shrink it to the height of a capital on this row.
+                    let letter = ink?.glyphBounds(in: capBox)
+                    let capHeight = inkLine.map { $0.top - $0.baseline } ?? regionHeight * 0.6
+                    let cap = ReflowWord.Piece(
+                        pageIndex: region.pageIndex,
+                        rect: letter?.insetBy(dx: -0.5, dy: 0) ?? capBox,
+                        baseline: letter?.minY ?? capBox.minY,
+                        scale: capHeight / (letter?.height ?? capBox.height)
+                    )
                     lineWords[0] = ReflowWord(pieces: [cap] + lineWords[0].pieces, startsLine: lineWords[0].startsLine)
                     dropCap = nil
                 }
@@ -262,6 +299,8 @@ nonisolated enum ReflowExtractor {
     struct Glyph {
         let character: unichar
         let box: CGRect
+        /// The box was inflated by PDFKit and estimated from the lines around it.
+        var isEstimated = false
 
         var isLetter: Bool {
             UnicodeScalar(character).map { CharacterSet.letters.contains($0) } ?? false
@@ -317,6 +356,104 @@ nonisolated enum ReflowExtractor {
         }
         if !current.isEmpty { words.append(current) }
         return words
+    }
+
+    // MARK: Ink
+
+    /// A grayscale rendering of a region, to measure where ink actually is.
+    /// Glyph boxes from PDFKit include line spacing and can be inflated; ink is exact.
+    struct InkMap {
+        private let pixels: [UInt8]
+        private let width: Int
+        private let height: Int
+        private let rect: CGRect
+        private let scale: CGFloat
+
+        init?(page: PDFPage, rect: CGRect, scale: CGFloat = 4) {
+            let width = Int((rect.width * scale).rounded(.up))
+            let height = Int((rect.height * scale).rounded(.up))
+            guard width > 0, height > 0 else { return nil }
+            var pixels = [UInt8](repeating: 255, count: width * height)
+            let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+                guard let context = CGContext(
+                    data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                    bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                    bitmapInfo: CGImageAlphaInfo.none.rawValue
+                ) else { return false }
+                // Bitmap row 0 is the top; PDF y grows upward.
+                context.scaleBy(x: scale, y: scale)
+                context.translateBy(x: -rect.minX, y: -rect.minY)
+                page.draw(with: .mediaBox, to: context)
+                return true
+            }
+            guard drawn else { return nil }
+            self.pixels = pixels
+            self.width = width
+            self.height = height
+            self.rect = rect
+            self.scale = scale
+        }
+
+        /// Ink pixels per pixel row inside `box`, from the top of the box down.
+        private func rowCounts(in box: CGRect) -> (counts: [Int], top: Int, left: Int, right: Int)? {
+            let left = max(0, Int(((box.minX - rect.minX) * scale).rounded(.down)))
+            let right = min(width, Int(((box.maxX - rect.minX) * scale).rounded(.up)))
+            let top = max(0, Int(((rect.maxY - box.maxY) * scale).rounded(.down)))
+            let bottom = min(height, Int(((rect.maxY - box.minY) * scale).rounded(.up)))
+            guard left < right, top < bottom else { return nil }
+            let counts = (top..<bottom).map { y in
+                (left..<right).reduce(0) { $0 + (pixels[y * width + $1] < 160 ? 1 : 0) }
+            }
+            return (counts, top, left, right)
+        }
+
+        private func pageY(ofRow row: Int) -> CGFloat {
+            rect.maxY - CGFloat(row) / scale
+        }
+
+        /// The text baseline of a line inside `box`: the bottom of its densest band of ink.
+        /// Descenders are sparse, so the count drops sharply right below the baseline.
+        /// Returns the baseline and the top of the line's ink.
+        func line(in box: CGRect) -> (baseline: CGFloat, top: CGFloat)? {
+            guard let (counts, top, _, _) = rowCounts(in: box),
+                  let peak = counts.indices.max(by: { counts[$0] < counts[$1] }), counts[peak] > 0
+            else { return nil }
+            var bottom = peak
+            while bottom + 1 < counts.count, counts[bottom + 1] >= counts[peak] / 4 { bottom += 1 }
+            var inkTop = peak
+            while inkTop > 0, counts[inkTop - 1] > 0 { inkTop -= 1 }
+            return (pageY(ofRow: top + bottom + 1), pageY(ofRow: top + inkTop))
+        }
+
+        /// The tight bounds of the tallest unbroken run of ink rows in `box`,
+        /// leaving out stray marks above or below it.
+        func glyphBounds(in box: CGRect) -> CGRect? {
+            guard let (counts, top, left, right) = rowCounts(in: box) else { return nil }
+            var best: Range<Int>?
+            var start: Int?
+            for (index, count) in (counts + [0]).enumerated() {
+                if count > 0, start == nil { start = index }
+                if count == 0, let first = start {
+                    if (index - first) > (best?.count ?? 0) { best = first..<index }
+                    start = nil
+                }
+            }
+            guard let best else { return nil }
+            var minX = right, maxX = left
+            for y in best {
+                for x in left..<right where pixels[(top + y) * width + x] < 160 {
+                    minX = min(minX, x)
+                    maxX = max(maxX, x + 1)
+                }
+            }
+            guard minX < maxX else { return nil }
+            return CGRect(
+                x: rect.minX + CGFloat(minX) / scale,
+                y: pageY(ofRow: top + best.upperBound),
+                width: CGFloat(maxX - minX) / scale,
+                height: CGFloat(best.count) / scale
+            )
+        }
     }
 
     // MARK: Helpers
