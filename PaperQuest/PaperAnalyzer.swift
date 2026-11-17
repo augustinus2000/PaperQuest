@@ -239,6 +239,12 @@ nonisolated private struct LayoutAnalysis {
         if line.rect.height > line.rect.width * 2, line.rect.height > 40 {
             return true
         }
+        // A centered page number can sit a little above the bottom band (NeurIPS: 40–49pt of 792).
+        if Self.matches(line.text, #"^\d{1,4}$"#),
+           Self.isInMarginBand(line.rect, box: box, fraction: 0.1),
+           abs(line.rect.midX - box.midX) < box.width * 0.05 {
+            return true
+        }
         let inTopBand = line.rect.minY > box.maxY - box.height * 0.075
         let inBottomBand = line.rect.maxY < box.minY + box.height * 0.06
         guard inTopBand || inBottomBand else { return false }

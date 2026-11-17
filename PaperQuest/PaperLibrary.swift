@@ -137,7 +137,7 @@ final class PaperLibrary {
     // MARK: Background PDF Work
 
     /// Bump when card boundaries change; saved positions from other versions restart at the first card.
-    private static let analysisVersion = 6
+    private static let analysisVersion = 7
 
     /// Parses the PDF off the main actor so large papers don't freeze the UI.
     @concurrent

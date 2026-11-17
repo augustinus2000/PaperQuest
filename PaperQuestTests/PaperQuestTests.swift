@@ -264,6 +264,16 @@ struct NeurIPSPaperTests {
     /// A math-heavy line where body text and subscripts have equal character counts.
     /// Font-size ties used to follow randomized dictionary order, so this paragraph
     /// appeared in some runs and vanished in others.
+    /// Page 2's centered page number sits just above the usual footer band;
+    /// it must not end up inside the paragraph that crosses the page ("… 2 The Transformer follows …").
+    @Test func pageNumbersStayOutOfCards() throws {
+        let card = try #require(summary.texts.first { $0.original.contains("The Transformer follows this overall") })
+        #expect(!card.original.contains("2 The Transformer"))
+        // The paragraph continues from page 2 without an indent, so it joins the previous text.
+        #expect(card.original.hasPrefix("Most competitive neural sequence"))
+        #expect(card.regions.allSatisfy { $0.rect.minY > 60 }, "no region around the footer")
+    }
+
     @Test func mathHeavyLineIsKeptDeterministically() {
         #expect(summary.texts.contains { $0.original.hasPrefix("Where the projections are parameter matrices") })
         // The subscript row inside the equation's height belongs to the equation.
