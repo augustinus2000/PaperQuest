@@ -59,7 +59,18 @@ nonisolated enum ReflowExtractor {
             for line in selection.selectionsByLine() {
                 let range = line.range(at: 0, on: page)
                 guard range.location != NSNotFound, range.length > 0 else { continue }
-                lineGlyphs.append(glyphs(in: range, page: page))
+                let next = glyphs(in: range, page: page)
+                // An inline fraction splits its line in two: "of 1" and "√dk . Additive …", the second
+                // starting under the numerator. Keep them as one line so the fraction stays one word.
+                let previousBoxes = lineGlyphs.last?.map(\.box).filter { !$0.isNull } ?? []
+                if !previousBoxes.isEmpty, let first = next.first(where: { !$0.box.isNull })?.box,
+                   case let last = union(previousBoxes),
+                   first.minX < last.maxX, first.minX > last.minX,
+                   first.maxY > last.midY, first.minY < last.minY {
+                    lineGlyphs[lineGlyphs.count - 1] += next
+                } else {
+                    lineGlyphs.append(next)
+                }
             }
             let inkRect = lineGlyphs.joined().map(\.box).filter { !$0.isNull }
                 .reduce(region.rect) { $0.union($1) }
@@ -162,13 +173,23 @@ nonisolated enum ReflowExtractor {
                         ))
                     }
                     // Fit the crop to the ink that belongs to this line: shapes touching the band
-                    // just above the baseline. This drops marks from the next line (a √ bar below
-                    // "and") and, on estimated rows, reaches up to keep a √ bar that is taller than
-                    // a normal line.
+                    // just above the baseline, plus small marks right above them (i dots, numerators).
+                    // This drops marks from neighboring lines (a √ bar below "and", descender tips
+                    // above) and, on estimated rows, reaches up to keep a √ bar taller than a line.
                     let search = isEstimated ? boxes.insetBy(dx: 0, dy: -regionHeight * 0.3) : boxes
-                    if let extent = ink?.extent(in: search, band: baseline...(baseline + regionHeight * 0.3)) {
-                        let bottom = min(max(rect.minY, extent.bottom - 0.5), baseline)
-                        let top = isEstimated ? max(rect.maxY, extent.top + 0.5) : rect.maxY
+                    if let extent = ink?.extent(
+                        in: search, band: baseline...(baseline + regionHeight * 0.3), gapAbove: regionHeight * 0.3
+                    ) {
+                        // Estimated rows may also reach down (a fraction's denominator).
+                        let bottom = isEstimated
+                            ? min(extent.bottom - 0.5, baseline)
+                            : min(max(rect.minY, extent.bottom - 0.5), baseline)
+                        // Estimated boxes are guesses, so the ink decides the top. A box raised above
+                        // a normal line (by a numerator) can reach the line above's descenders: trim it.
+                        // Normal boxes stay as they are; their top sits right at the i dots.
+                        let isRaised = rect.maxY - baseline > normalAscent + 0.5
+                        let top = isEstimated ? extent.top + 0.5
+                            : isRaised ? min(rect.maxY, max(extent.top + 0.5, baseline + normalAscent)) : rect.maxY
                         rect = CGRect(x: rect.minX, y: bottom, width: rect.width, height: top - bottom)
                     }
                     return ReflowWord(
@@ -442,7 +463,8 @@ nonisolated enum ReflowExtractor {
 
         /// The top and bottom of the connected shapes in `box` that reach into `band` (page y).
         /// Marks that only touch the box from a neighboring line are left out.
-        func extent(in box: CGRect, band: ClosedRange<CGFloat>) -> (top: CGFloat, bottom: CGFloat)? {
+        /// Shapes sitting just above it (an i dot, a fraction's numerator) are kept too.
+        func extent(in box: CGRect, band: ClosedRange<CGFloat>, gapAbove: CGFloat) -> (top: CGFloat, bottom: CGFloat)? {
             let left = max(0, Int(((box.minX - rect.minX) * scale).rounded(.down)))
             let right = min(width, Int(((box.maxX - rect.minX) * scale).rounded(.up)))
             let top = max(0, Int(((rect.maxY - box.maxY) * scale).rounded(.down)))
@@ -453,6 +475,7 @@ nonisolated enum ReflowExtractor {
             let boxWidth = right - left
             var visited = [Bool](repeating: false, count: boxWidth * (bottom - top))
             var minRow = Int.max, maxRow = Int.min
+            var others: [(top: Int, bottom: Int)] = []
             for startY in top..<bottom {
                 for startX in left..<right {
                     let startIndex = (startY - top) * boxWidth + (startX - left)
@@ -478,10 +501,25 @@ nonisolated enum ReflowExtractor {
                     if shapeTop <= bandBottom, shapeBottom >= bandTop {
                         minRow = min(minRow, shapeTop)
                         maxRow = max(maxRow, shapeBottom)
+                    } else if shapeTop > top + 2 {
+                        // Shapes cut off at the top edge belong to the line above (descender tips).
+                        others.append((shapeTop, shapeBottom))
                     }
                 }
             }
             guard minRow <= maxRow else { return nil }
+            // Grow upward through small gaps only; marks from the line above sit further away.
+            let gapRows = Int((gapAbove * scale).rounded())
+            var grew = true
+            while grew {
+                grew = false
+                for (index, shape) in others.enumerated().reversed()
+                where shape.bottom < minRow && shape.bottom >= minRow - gapRows {
+                    minRow = shape.top
+                    others.remove(at: index)
+                    grew = true
+                }
+            }
             return (pageY(ofRow: minRow), pageY(ofRow: maxRow + 1))
         }
 

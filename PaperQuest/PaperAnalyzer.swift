@@ -264,6 +264,8 @@ nonisolated private struct LayoutAnalysis {
         let sorted = lines.sorted {
             $0.rect.midY != $1.rect.midY ? $0.rect.midY > $1.rect.midY : $0.rect.minX < $1.rect.minX
         }
+        let heights = lines.map(\.rect.height).sorted()
+        let lineHeight = heights.isEmpty ? 0 : heights[heights.count / 2]
         var merged: [Line] = []
         for line in sorted {
             let candidate = merged.lastIndex { other in
@@ -271,7 +273,13 @@ nonisolated private struct LayoutAnalysis {
                     <= min(other.rect.height, line.rect.height) * 0.45
                 let gap = line.rect.minX - other.rect.maxX
                 let crossesGutter = other.rect.maxX <= box.midX && line.rect.minX >= box.midX
-                return sameRow && gap >= -1 && gap < 12 && !crossesGutter
+                // An inline fraction splits its line in two that overlap: "of 1" and "√dk . Additive …",
+                // with the numerator stacked over the denominator.
+                // The numerator lifts the first part well above the rest (~3pt at 9pt text); fragments
+                // split around sub/superscripts stay level and are handled elsewhere.
+                let overlapsFraction = gap >= -12 && line.rect.minX > other.rect.minX && line.rect.maxX > other.rect.maxX
+                    && other.rect.midY - line.rect.midY >= lineHeight * 0.25
+                return sameRow && (gap >= -1 || overlapsFraction) && gap < 12 && !crossesGutter
             }
             if let candidate {
                 merged[candidate].text += " " + line.text

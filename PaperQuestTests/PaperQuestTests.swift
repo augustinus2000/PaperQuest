@@ -337,7 +337,8 @@ struct ReflowTests {
         // Every word's top sits a similar height above its baseline: no row drawn lower than the rest.
         let ascents = words.flatMap(\.pieces).filter { $0.scale == 1 }.map { $0.rect.maxY - $0.baseline }
         let typical = ascents.sorted()[ascents.count / 2]
-        let outliers = ascents.filter { abs($0 - typical) > typical * 0.35 }
+        // Crops fit to the ink can be shorter (small caps); a much taller one means a misplaced row.
+        let outliers = ascents.filter { $0 > typical * 1.35 }
         #expect(outliers.isEmpty, "ascents: \(ascents.map { ($0 * 10).rounded() / 10 })")
     }
 
@@ -366,6 +367,21 @@ struct ReflowTests {
         let ascents = words.flatMap(\.pieces).map { $0.rect.maxY - $0.baseline }
         let typical = ascents.sorted()[ascents.count / 2]
         #expect(ascents.contains { $0 > typical * 1.1 }, "the √ word is taller than the others")
+    }
+
+    /// An inline fraction (1/√dk) splits its line in two in PDFKit ("of 1" and "√dk . Additive …").
+    /// The card must not end at "of 1", and the fraction must stay one word with both parts.
+    @Test(.enabled(if: Fixture.exists(Fixture.neuripsPaper)))
+    func inlineFractionStaysWhole() throws {
+        let document = try #require(PDFDocument(url: Fixture.neuripsPaper))
+        let cards = CardSummary(cards: try Fixture.cards(from: Fixture.neuripsPaper))
+        let card = try #require(cards.texts.first { $0.original.hasPrefix("The two most commonly used") })
+        #expect(card.original.contains("Additive attention computes"))
+        let words = ReflowExtractor.paragraph(for: card.regions, in: document, cardText: card.original).words
+        let heights = words.flatMap(\.pieces).map(\.rect.height).sorted()
+        let typical = heights[heights.count / 2]
+        // Two fractions in this card; each crop holds the numerator, bar and √dk.
+        #expect(words.filter { $0.pieces.contains { $0.rect.height > typical * 1.4 } }.count >= 2)
     }
 
     @Test(.enabled(if: Fixture.exists(Fixture.neuripsPaper)))
